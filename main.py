@@ -99,6 +99,9 @@ class 黑名单系统(Star):
         self.黑名单锁 = asyncio.Lock()
         self.闭嘴锁 = asyncio.Lock()
 
+    async def initialize(self):
+        """当插件被激活时会调用这个方法"""
+        await self.过期清理()
         ed = time.perf_counter()
         耗时 = ed - op
         logger.info(f"启动完成，耗时{耗时:.6f}秒")
@@ -121,6 +124,8 @@ class 黑名单系统(Star):
                 if 当前时间 < self.黑名单字典['私聊'][发送者]:
                     event.stop_event()
                     return
+                else:
+                    await self.移除黑名单(黑名单用户=发送者, 群ID='私聊')
             return #私聊只有这个处理
 
         if 群号 in self.黑名单群聊:
@@ -484,15 +489,14 @@ class 黑名单系统(Star):
         """重大优化，使用群组隔离防止在一个群出现另一个群的用户导致另一个群的用户可能被骚扰"""
         if not self.黑名单字典:
             return 'ℹ️ 还没有黑名单用户哦'
-        当前时间 = time.time()
-        for 群号, 群字典 in self.黑名单字典.copy().items():
-            for 用户ID, 结束时间 in 群字典.copy().items():
-                if 当前时间 > 结束时间:
-                    await self.移除黑名单(黑名单用户=用户ID, 群ID=群号)
+
+        await self.过期清理()
+
         if not self.黑名单字典:
             return 'ℹ️ 还没有黑名单用户哦'
-        群ID = event.get_group_id()
 
+        群ID = event.get_group_id()
+        当前时间 = time.time()
         格式化列表 = []
         for entry in self.黑名单列表:
             分割 = entry.split('|')
@@ -512,6 +516,13 @@ class 黑名单系统(Star):
         else:
             表头 = f'有{len(格式化列表)}个用户在黑名单，格式：\n用户ID | 剩余时间 | 用户名 | 拉黑理由 | 群ID | 操作者\n\n'
         return 表头 + '\n\n'.join(格式化列表)
+
+    async def 过期清理(self):
+        当前时间 = time.time()
+        for 群号, 群字典 in self.黑名单字典.copy().items():
+            for 用户ID, 结束时间 in 群字典.copy().items():
+                if 当前时间 > 结束时间:
+                    await self.移除黑名单(黑名单用户=用户ID, 群ID=群号)
 
     async def 加入黑名单(self,
                          event: AiocqhttpMessageEvent = None,
@@ -777,6 +788,77 @@ class 黑名单系统(Star):
         else:
             await self.发送回复文本(event, "❌ 解除拉黑失败，请检查用户是否在黑名单中")
 
+    @filter.command("搜索黑名单")
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    async def 搜索黑名单(self, event: AiocqhttpMessageEvent, 用户ID: str):
+        """从黑名单中搜索用户，建议不要在公共场合使用"""
+        if not 用户ID:
+            await self.发送回复文本(event, "❌ 请指定要搜索的用户ID")
+            event.stop_event()
+            return
+
+        用户ID = str(用户ID).strip()
+        当前时间 = time.time()
+        匹配条目 = []
+
+        for entry in self.黑名单列表:
+            parts = entry.split('|')
+            if len(parts) < 6:
+                continue
+            if parts[0] != 用户ID:
+                continue
+
+            # 计算剩余时间
+            结束时间_str = parts[1]
+            if 结束时间_str == '永久':
+                剩余时间显示 = '永久'
+                已过期 = False
+            else:
+                try:
+                    结束时间 = float(结束时间_str)
+                except ValueError:
+                    剩余时间显示 = '未知'
+                    已过期 = False
+                else:
+                    if 当前时间 > 结束时间:
+                        剩余时间显示 = '已过期'
+                        已过期 = True
+                    else:
+                        剩余分钟 = (结束时间 - 当前时间) // 60 + 1
+                        剩余时间显示 = self._格式化时长显示(剩余分钟)
+                        已过期 = False
+
+            # 如果已过期，可以选择跳过不显示（注释掉下一行则显示所有）
+            # if 已过期:
+            #     continue
+
+            匹配条目.append({
+                '群ID': parts[4],
+                '结束时间显示': 剩余时间显示,
+                '名字': parts[2],
+                '理由': parts[3],
+                '操作者': parts[5],
+                '已过期': 已过期
+            })
+
+        if not 匹配条目:
+            await self.发送回复文本(event, f"ℹ️ 用户 {用户ID} 不在黑名单中")
+            event.stop_event()
+            return
+
+        # 构建输出文本
+        lines = [f"🔍 用户 {用户ID} 的黑名单记录：", ""]
+        for idx, item in enumerate(匹配条目, 1):
+            status = "⚠️ 已过期" if item['已过期'] else "🟢 有效"
+            lines.append(
+                f"{idx}. 群：{item['群ID']} | {status}\n"
+                f"   剩余时间：{item['结束时间显示']} | 名字：{item['名字']}\n"
+                f"   理由：{item['理由']} | 操作者：{item['操作者']}"
+            )
+        await self.发送回复文本(event, "\n".join(lines))
+        event.stop_event()
+
+
     @filter.llm_tool("shut_up")
     async def 闭嘴工具(self, event: AiocqhttpMessageEvent, 时长: int=None):
         """当群友觉得你很吵或者管理员叫你闭嘴时，可以使用此工具让自己闭嘴一段时间，建议时长：40分钟，80分钟，120分钟
@@ -829,3 +911,7 @@ class 黑名单系统(Star):
         except Exception as e:
             logger.error(f"获取名字失败：\n{e}", exc_info=True)
             return "名字未知"
+
+    async def terminate(self):
+        """当插件被禁用、重载插件时会调用这个方法"""
+        await self.过期清理()
