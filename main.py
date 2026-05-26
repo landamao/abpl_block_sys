@@ -1,10 +1,6 @@
-import time, sys
-import asyncio, re
-from astrbot.api.all import Star, EventMessageType, logger
+import time, sys, asyncio, re
 from astrbot.api.event import filter
-from astrbot.core import AstrBotConfig
-from astrbot.core.message.components import At, Plain, Reply
-from astrbot.core.star import Context
+from astrbot.api.all import Star, Context, logger, Plain, At, Reply, AstrBotConfig
 from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import AiocqhttpMessageEvent
 op = time.perf_counter()
 
@@ -106,7 +102,7 @@ class 黑名单系统(Star):
         耗时 = ed - op
         logger.info(f"启动完成，耗时{耗时:.6f}秒")
 
-    @filter.event_message_type(EventMessageType.ALL, priority=sys.maxsize-1)
+    @filter.event_message_type(filter.EventMessageType.ALL, priority=sys.maxsize-1)
     @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
     async def 入口(self, event: AiocqhttpMessageEvent):
         """消息主入口"""
@@ -744,6 +740,17 @@ class 黑名单系统(Star):
         """解除拉黑指令，示例：解除拉黑 用户ID……
         或者艾特某个人或者回复某个人之后，输入解除拉黑，即可解除拉黑"""
 
+    @filter.command("闭嘴")
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    async def 解除拉黑指令(self, _):
+        """让机器人在群里闭嘴，示例：闭嘴五分钟……
+        闭嘴后所有人发的消息都将拒绝"""
+
+    @filter.command("开嘴")
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    async def 解除拉黑指令(self, _):
+        """解除该群的闭嘴"""
+
     @filter.command("群拉黑")
     @filter.permission_type(filter.PermissionType.ADMIN)
     async def 群拉黑指令(self, event: AiocqhttpMessageEvent):
@@ -888,8 +895,9 @@ class 黑名单系统(Star):
     def 是管理员(event) -> bool:
         """判断发送者是否为群管理员或群主"""
         try:
-            return (event.message_obj.raw_message.sender['role'] in ('owner', 'admin')) or event.is_admin()
-        except:
+            return (event.message_obj.raw_message['sender']['role'] in ('owner', 'admin')) or event.is_admin()
+        except Exception as e:
+            logger.error(f"获取 {event.get_sender_name()} 的身份信息失败：{e}")
             return event.is_admin()
 
     @staticmethod
