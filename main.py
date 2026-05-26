@@ -742,13 +742,13 @@ class 黑名单系统(Star):
 
     @filter.command("闭嘴")
     @filter.permission_type(filter.PermissionType.ADMIN)
-    async def 解除拉黑指令(self, _):
+    async def 闭嘴指令(self, _):
         """让机器人在群里闭嘴，示例：闭嘴五分钟……
         闭嘴后所有人发的消息都将拒绝"""
 
     @filter.command("开嘴")
     @filter.permission_type(filter.PermissionType.ADMIN)
-    async def 解除拉黑指令(self, _):
+    async def 开嘴指令(self, _):
         """解除该群的闭嘴"""
 
     @filter.command("群拉黑")
