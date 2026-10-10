@@ -28,5 +28,12 @@
       "hint": "显示拉黑日志，如：用户{ID}已拉黑",
       "type": "bool",
       "default": true
+    },
+    "拦截时机": {
+      "description": "拦截时机",
+      "hint": "终止事件则直接终止事件，后续处理器都不会触发，消息可能也不会在群里上下文里，禁用llm则仅禁用llm，其他正常触发",
+      "type": "string",
+      "options": ["禁用llm", "终止事件"],
+      "default": "禁用llm"
     }
 }

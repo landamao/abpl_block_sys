@@ -17,6 +17,7 @@ class 黑名单系统(Star):
             self.不包括指令:bool = not config['包括指令']
             self.闭嘴列表:list[str] = config['闭嘴列表']
             self.显示日志:bool = config['显示日志']
+            self.禁用llm:bool = config['拦截时机'] == '禁用llm'
         except Exception as e:
             logger.critical(f"致命错误！获取配置失败，请重新安装插件，或联系开发者\n错误信息：{str(e)}", exc_info=True)
             raise RuntimeError
@@ -147,6 +148,9 @@ class 黑名单系统(Star):
             if 当前时间 < self.黑名单字典[群号][发送者]:
                 if self.不包括指令 and 处理文本.startswith(self.指令前缀):
                     return
+                if self.禁用llm:
+                    event.should_call_llm(True)
+                    return
                 event.stop_event()
                 return
             else:
@@ -154,6 +158,9 @@ class 黑名单系统(Star):
         elif 发送者 in self.黑名单字典.get('全局', {}):
             if 当前时间 < self.黑名单字典['全局'][发送者]:
                 if self.不包括指令 and 处理文本.startswith(self.指令前缀):
+                    return
+                if self.禁用llm:
+                    event.should_call_llm(True)
                     return
                 if self.显示日志:
                     logger.info(f"用户{发送者}已被拉黑")
