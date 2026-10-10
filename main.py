@@ -380,15 +380,35 @@ class 黑名单系统(Star):
     async def 黑名单列表指令(self, event: AiocqhttpMessageEvent):
         """查看黑名单列表"""
         分割 = event.message_str.split()
-        if len(分割) > 1 and 分割[1] == 'all' and event.is_admin():
+
+        指定群号 = None
+        查看全部 = False
+
+        if len(分割) > 1 and event.is_admin():
+            if 分割[1] == 'all':
+                查看全部 = True
+            else:
+                指定群号 = 分割[1]
+
+        if 查看全部:
             结果 = await self.格式化黑名单列表(event, notall=False)
+        elif 指定群号:
+            结果 = await self.格式化黑名单列表(event, 群ID=指定群号)
         else:
             结果 = await self.格式化黑名单列表(event)
+
         if 结果 == 'ℹ️ 还没有黑名单用户哦':
+            if 指定群号:
+                结果 = f'ℹ️ 群 {指定群号} 还没有黑名单用户哦'
             await self.发送回复文本(event, 结果)
             return
+
         if event.is_admin():
-            await self.发送回复文本(event, 结果 + '\n\n使用“解除拉黑 用户ID”解除拉黑')
+            if 指定群号:
+                提示 = f'\n\n群 {指定群号} 的黑名单，使用“群解除拉黑 {指定群号} 用户ID”解除拉黑'
+            else:
+                提示 = '\n\n使用“解除拉黑 用户ID”解除拉黑'
+            await self.发送回复文本(event, 结果 + 提示)
         else:
             await self.发送回复文本(event, 结果)
 
@@ -481,7 +501,7 @@ class 黑名单系统(Star):
             self.config.save_config()
         await self.发送回复文本(event, f"✅ 已清空群 {指定群号} 的黑名单，共移除 {移除条目数} 条记录")
 
-    async def 格式化黑名单列表(self, event: AiocqhttpMessageEvent, notall: bool = True):
+    async def 格式化黑名单列表(self, event: AiocqhttpMessageEvent, notall: bool = True, 群ID: str = None):
         """重大优化，使用群组隔离防止在一个群出现另一个群的用户导致另一个群的用户可能被骚扰"""
         if not self.黑名单字典:
             return 'ℹ️ 还没有黑名单用户哦'
@@ -491,7 +511,8 @@ class 黑名单系统(Star):
         if not self.黑名单字典:
             return 'ℹ️ 还没有黑名单用户哦'
 
-        群ID = event.get_group_id()
+        if 群ID is None:
+            群ID = event.get_group_id()
         当前时间 = time.time()
         格式化列表 = []
         for entry in self.黑名单列表:
@@ -890,6 +911,36 @@ class 黑名单系统(Star):
                 self.config.save_config()
             时长文本 = self._格式化时长显示(时长)  # 复用已有的格式化函数
             return f"✅ 机器人将在本群闭嘴{时长文本}"
+
+    @filter.llm_tool("remove_from_blacklist")
+    async def 移除黑名单工具(self, event: AiocqhttpMessageEvent, 用户ID: int):
+        """将之前由你（LLM）添加到黑名单的用户移除。你只能移除你自己添加的用户，不能移除管理员添加的。请谨慎使用。
+        Args:
+            用户ID(number):要解除拉黑的用户ID
+        """
+        群ID = event.get_group_id() or "私聊"
+        用户ID = str(用户ID)
+
+        # 先找是否存在该用户（当前群）
+        存在条目 = None
+        for entry in self.黑名单列表:
+            parts = entry.split('|')
+            if len(parts) >= 6 and parts[0] == 用户ID and parts[4] == 群ID:
+                存在条目 = parts
+                break
+
+        if 存在条目 is None:
+            return f"❌ 用户 {用户ID} 不在黑名单中。"
+
+        名字 = 存在条目[2]
+
+        # 再判断操作者是否为 llm
+        if 存在条目[5] != 'llm':
+            return f"❌ 用户「{名字}（{用户ID}）」不是由你添加的，请联系管理员"
+
+        # 调用移除方法
+        结果 = await self.移除黑名单(event, 黑名单用户=用户ID, 群ID=群ID)
+        return 结果
 
     @staticmethod
     def 是管理员(event) -> bool:
